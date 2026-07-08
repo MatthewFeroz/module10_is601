@@ -8,8 +8,24 @@ on:
 
 jobs:
   # Job 1: run the full test suite (unit, integration, end-to-end).
+  # A PostgreSQL service container runs alongside the tests, mirroring the
+  # docker-compose setup so future database-backed tests can use it.
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fastapi_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -74,6 +90,6 @@ jobs:
         with:
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/calculator-api:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/calculator-api:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/calculator-sql:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/calculator-sql:${{ github.sha }}
           platforms: linux/amd64,linux/arm64
