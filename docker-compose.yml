@@ -1,4 +1,5 @@
 services:
+  # FastAPI application
   web:
     build: .
     container_name: fastapi_calculator
@@ -8,6 +9,62 @@ services:
       # Mount the source so code changes reload without rebuilding the image.
       - .:/app
     environment:
-      - PYTHONDONTWRITEBYTECODE=1
-      - PYTHONUNBUFFERED=1
+      PYTHONDONTWRITEBYTECODE: 1
+      PYTHONUNBUFFERED: 1
+      # Connection string for future database integration; the host "db"
+      # resolves to the postgres service on the compose network.
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/fastapi_db
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  # PostgreSQL database
+  db:
+    image: postgres:17
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fastapi_db
+    ports:
+      - "5432:5432"
+    volumes:
+      # Named volume so data survives container restarts.
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+  # pgAdmin web UI for inspecting the database and running SQL
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge
