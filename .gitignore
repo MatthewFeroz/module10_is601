@@ -1,0 +1,22 @@
+# Virtual environment
+venv/
+.venv/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Test & coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+test-results/
+
+# Logs
+logs/
+*.log
+
+# IDE / OS files
+.vscode/
+.idea/
+.DS_Store
