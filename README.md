@@ -1,6 +1,6 @@
 # Module 10 — Secure FastAPI Users with PostgreSQL and CI/CD
 
-[![CI/CD](https://github.com/MatthewFeroz/calculator-sql/actions/workflows/test.yml/badge.svg)](https://github.com/MatthewFeroz/calculator-sql/actions/workflows/test.yml)
+[![CI/CD](https://github.com/MatthewFeroz/module10_is601/actions/workflows/test.yml/badge.svg)](https://github.com/MatthewFeroz/module10_is601/actions/workflows/test.yml)
 
 This project extends the Module 9 FastAPI calculator with a secure,
 database-backed user foundation. SQLAlchemy maps user objects to PostgreSQL,
@@ -8,7 +8,7 @@ Pydantic validates and normalizes account data, bcrypt hashes every password
 with a unique salt, and GitHub Actions tests, scans, and publishes the Docker
 image.
 
-- GitHub repository: [MatthewFeroz/calculator-sql](https://github.com/MatthewFeroz/calculator-sql)
+- GitHub repository: [MatthewFeroz/module10_is601](https://github.com/MatthewFeroz/module10_is601)
 - Docker Hub repository: [matthewferoz/calculator-sql](https://hub.docker.com/r/matthewferoz/calculator-sql)
 
 ## Security and Data Design
