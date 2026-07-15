@@ -6,19 +6,29 @@ on:
   pull_request:
     branches: [ main ]
 
+# Cancel an older run for the same branch after a newer commit is pushed.
+concurrency:
+  group: module-10-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  # Job 1: run the full test suite (unit, integration, end-to-end).
-  # A PostgreSQL service container runs alongside the tests, mirroring the
-  # docker-compose setup so future database-backed tests can use it.
+  # Job 1: validate unit, PostgreSQL integration, API, and browser behavior.
   test:
     runs-on: ubuntu-latest
+    env:
+      # Only PostgreSQL-marked tests use this disposable service database.
+      # Other application tests select in-memory SQLite in tests/conftest.py.
+      TEST_DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/calculator_test
     services:
       postgres:
         image: postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: fastapi_db
+          POSTGRES_DB: calculator_test
         ports:
           - 5432:5432
         options: >-
@@ -27,9 +37,11 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -40,56 +52,87 @@ jobs:
           pip install -r requirements.txt
           playwright install --with-deps chromium
 
-      - name: Run unit tests
-        run: pytest tests/unit/
+      - name: Run complete test suite
+        run: |
+          mkdir -p test-results
+          pytest --junitxml=test-results/junit.xml --cov-report=xml:coverage.xml
 
-      - name: Run integration tests
-        run: pytest tests/integration/
+      - name: Upload test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-reports
+          path: |
+            test-results/junit.xml
+            coverage.xml
+          if-no-files-found: error
 
-      - name: Run end-to-end tests
-        run: pytest tests/e2e/
-
-  # Job 2: build the Docker image and scan it for known vulnerabilities.
+  # Job 2 runs only after tests pass: build, smoke-test, then vulnerability-scan.
   security:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Build image
-        run: docker build -t app:test .
+      - name: Build candidate image
+        run: docker build --tag calculator-sql:test .
+
+      - name: Smoke-test candidate container
+        run: |
+          docker run --detach --name calculator-smoke --publish 8000:8000 \
+            --env DATABASE_URL=sqlite+pysqlite:///:memory: calculator-sql:test
+          trap 'docker rm --force calculator-smoke' EXIT
+          for attempt in {1..20}; do
+            if curl --fail --silent http://localhost:8000/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs calculator-smoke
+          exit 1
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        # Pin the verified v0.36.0 commit instead of a mutable version tag.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: 'app:test'
+          image-ref: 'calculator-sql:test'
           format: 'table'
           exit-code: '1'
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
 
-  # Job 3: on main, push the verified image to Docker Hub (our "production").
-  # Requires the DOCKERHUB_USERNAME and DOCKERHUB_TOKEN repository secrets
-  # and a GitHub environment named "production".
+  # Job 3 publishes only verified main-branch pushes, never pull requests.
+  # Repository secrets must contain a Docker Hub username and access token.
   deploy:
     needs: security
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: docker/setup-buildx-action@v3
+      - name: Set up QEMU for multi-platform builds
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
-      - uses: docker/login-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Authenticate to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v5
+      - name: Build and push immutable and latest tags
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
+          context: .
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/calculator-sql:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/calculator-sql:${{ github.sha }}
           platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

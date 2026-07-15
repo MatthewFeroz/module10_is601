@@ -1,0 +1,22 @@
+# Source-control and local configuration never belong in a runtime image.
+.git/
+.github/
+.env
+
+# Virtual environments, caches, and generated test output are host-specific.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+test-results/
+
+# Runtime state and coursework evidence should not increase image size.
+logs/
+*.log
+screenshots/
+module10/
+
